@@ -3,25 +3,99 @@
  * detached Session，喂真实的 append 校验（JSON 快照、surface 契约、遮蔽节点
  * 覆盖），验证「折叠」与「恢复」产出的替换事件真的被接受。
  *
- * 依赖 DSH 安装路径，缺失时自动跳过。
+ * 这个包不在本仓库的依赖里（只是 peerDependency），所以按下面的顺序动态查找；
+ * 一个都找不到就跳过，不算失败。
  */
 
 import assert from 'node:assert/strict'
+import { existsSync, readdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
+import path from 'node:path'
 import test from 'node:test'
+import { pathToFileURL } from 'node:url'
 
 import { FOLD_MARKER, foldSession, listFoldStubs, unfoldOne } from '../lib/fold.js'
 
-const SESSION_MODULE =
-  '/Users/kenneth/.nvm/versions/node/v22.22.2/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-session/lib/index.js'
+/** 全局安装的 dsh 本体里，其嵌套依赖的相对路径。 */
+const NESTED_SUFFIX = path.join(
+  'node_modules',
+  '@deepseek-ai',
+  'dsh',
+  'node_modules',
+  '@deepseek-ai',
+  'dsh-session',
+  'lib',
+  'index.js',
+)
 
-let Session
-try {
-  ;({ Session } = await import(SESSION_MODULE))
-} catch {
-  Session = undefined
+/**
+ * 按优先级列出候选位置：显式环境变量 → 本地 node_modules → 常见全局安装根。
+ * @returns {string[]} 去重后的绝对路径（或环境变量给的模块标识符）
+ */
+function sessionModuleCandidates() {
+  const candidates = []
+
+  const override = process.env.DSH_SESSION_MODULE
+  if (override !== undefined && override.trim() !== '') candidates.push(override.trim())
+
+  // 本地已安装：包被装进本仓库或上层 node_modules 时可直接解析。
+  try {
+    candidates.push(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-session'))
+  } catch {
+    // 未安装时忽略，继续找全局安装。
+  }
+
+  // 全局安装根：nvm 各版本、Homebrew、系统级、用户级。
+  const globalRoots = []
+  const nvmRoot = path.join(homedir(), '.nvm', 'versions', 'node')
+  if (existsSync(nvmRoot)) {
+    for (const version of readdirSync(nvmRoot)) {
+      globalRoots.push(path.join(nvmRoot, version, 'lib'))
+    }
+  }
+  globalRoots.push('/usr/local/lib', '/opt/homebrew/lib', path.join(homedir(), '.local', 'lib'))
+
+  for (const root of globalRoots) {
+    candidates.push(path.join(root, NESTED_SUFFIX))
+  }
+
+  return [...new Set(candidates)]
 }
 
-const skip = Session === undefined ? '本机没有 DSH 安装路径，跳过真实 Session 契约测试' : false
+/**
+ * 依次尝试导入候选位置，取第一个能给出 `Session` 的模块。
+ * @returns {Promise<{ Session: any, from: string } | undefined>}
+ */
+async function loadSessionModule() {
+  for (const candidate of sessionModuleCandidates()) {
+    if (candidate.startsWith('/') && !existsSync(candidate)) continue
+    const specifier = candidate.startsWith('/') || candidate.startsWith('file:')
+      ? pathToFileURL(candidate).href
+      : candidate
+    try {
+      const module = await import(specifier)
+      if (module?.Session !== undefined) return { Session: module.Session, from: candidate }
+    } catch {
+      // 解析或加载失败都继续试下一个。
+    }
+  }
+  return undefined
+}
+
+const loaded = await loadSessionModule()
+const Session = loaded?.Session
+const skip =
+  Session === undefined
+    ? '找不到 @deepseek-ai/dsh-session；装好 DSH 或设置 DSH_SESSION_MODULE 后即可运行真实契约测试'
+    : false
+
+if (loaded !== undefined) {
+  test('真实 Session 契约测试已启用', (t) => {
+    // 把解析到的模块路径打进诊断输出，跳过与启用两种状态都能排查。
+    t.diagnostic(`使用 ${loaded.from} 的真实 Session 实现`)
+  })
+}
 
 const OUTPUT = `go-test-start\n${'x'.repeat(2000)}\ngo-test-end`
 
