@@ -1,0 +1,22 @@
+# dsh-session-fold：会话折叠压缩。
+#
+# 只插入一条 Host 行（没有浏览器半身，一期不带设置页）。
+# 配置项全部有默认值，用户如有需要可在 profile 的 cordis.patch.yml 里用
+# `- id: session-fold` 覆盖任意字段（覆盖是整条 config 替换，需写全要改的项）。
+- insert:
+    - id: session-fold
+      name: dsh-session-fold
+      config:
+        auto: true
+        foldAtRatio: 0.25
+        foldAtTokens: 32768
+        foldThresholdChars: 800
+        headChars: 200
+        tailChars: 80
+        retainTurns: 3
+        minCandidates: 5
+        maxPerPass: 20
+        command: true
+        recallTool: true
+        prune: true
+        pruneRoot: ''

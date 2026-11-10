@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session Fold",
+    "description": "Fold older oversized tool outputs into on-disk spill files at step boundaries, keeping a short head/tail stub and the full text path; no extra model call."
+  }
+}

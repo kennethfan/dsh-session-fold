@@ -1,0 +1,43 @@
+{
+  "name": "dsh-session-fold",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "会话折叠压缩：在 step 边界把较早的超长工具输出折叠为落盘原文 + 短替身，零 LLM 调用，需要时可按路径回捞。",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "icon": "icon.svg",
+  "files": [
+    "index.js",
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/schemastery": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-spill": "*",
+    "@deepseek-ai/dsh-token-meter": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "context",
+    "compaction",
+    "spill"
+  ],
+  "author": "kennethfan",
+  "license": "MIT"
+}
