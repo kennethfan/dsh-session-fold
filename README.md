@@ -8,6 +8,8 @@ English: this plugin deterministically folds older oversized tool results into
 spill files and keeps a short head/tail stub with the recovery path. No extra
 model call; it complements `dsh-compaction-basic` instead of replacing it.
 
+仓库：<https://github.com/kennethfan/dsh-session-fold>
+
 ## 为什么需要它
 
 | 现有机制 | 何时生效 | 留白 |
@@ -25,7 +27,7 @@ model call; it complements `dsh-compaction-basic` instead of replacing it.
 ```
 <原文开头 200 字符>
 
-…[输出已折叠] bash command=go test ./... 
+…[输出已折叠] #3 bash command=go test ./...
 原输出 812 行 / 61234 字符 / 58.7 KB
 完整原文：/Users/kenneth/.dsh/.../spill/bash-2-....txt
 回捞：read 或 grep 这个文件：/Users/kenneth/.dsh/.../spill/bash-2-....txt…
@@ -59,8 +61,25 @@ flowchart TD
 
 ## 配置
 
-全部有默认值。在 profile 的 `cordis.patch.yml` 用 `- id: session-fold` 覆盖（config 是整条替换，
-需要写全要保留的字段）。
+全部有默认值，**两种改法写到同一处**：
+
+1. **图形配置页**（推荐）：设置侧栏的「会话折叠压缩」，或插件页本包那一行点进去。
+   12 个字段分「常用参数」（7）与「高级参数」（5，默认收起）两组。
+   改的是**本地草稿**：编辑只标「未保存」，点 **保存** 才一次性写入 profile 的 Cordis patch，
+   保存成功后才影响运行中的插件；另有 **放弃修改** 与 **恢复全部默认值**。草稿在保存前会先本地
+   校验（类型、范围、`foldThresholdChars > headChars + tailChars + 160`），不合格时保存按钮直接禁用。
+2. **配置文件**：在 profile 的 `cordis.patch.yml` 用 `- id: session-fold` 覆盖（config 是整条替换，
+   需要写全要保留的字段）。
+
+注意：宿主写回时会把**当时表单里的全部取值**写进 patch（volatile 表单整体投影），所以保存过一次之后
+这 13 个字段都被显式钉住，插件将来改默认值不会自动影响该 profile；想跟随新默认值就点「恢复全部默认值」。
+页面上的「已自定义」只在取值真的偏离默认值时才显示。
+
+配置页的写入经宿主 settings 表单落回 profile 的 Cordis patch，带 revision 防并发覆盖；
+被 home patch 或命令行覆盖压住时会明确拒绝并提示。在会话里用 `/fold-config` 可随时查看当前生效值。
+
+配置页提供 12 个字段（常用 7 + 高级 5）。**`pruneRoot` 故意不在页面上**：把 `/spill-prune`
+指向错误目录有风险，只能在 profile 的 `cordis.patch.yml` 里手动设置，Host 侧仍有路径护栏。
 
 | 字段 | 默认 | 含义 |
 |---|---|---|
@@ -78,8 +97,12 @@ flowchart TD
 | `prune` | `true` | 是否注册 `/spill-prune` 命令 |
 | `pruneRoot` | `''` | spill 根；留空则用后端 `ctx.spillStore.root` |
 
-自相矛盾配置在加载时直接拒绝：`foldThresholdChars` 必须大于
-`headChars + tailChars + 160`（否则折叠不会变小）。
+自相矛盾配置直接拒绝：`foldThresholdChars` 必须大于
+`headChars + tailChars + 160`（否则折叠不会变小）。表单写入被拒时页面上会显示原因；
+若某个中间值让配置暂时不自洽，Host 沿用上一次可用值并只记一条告警。
+
+`command` / `recallTool` / `prune` 三个开关是**运行期生效**的：命令和工具仍然注册，
+关闭时调用会得到「已在插件配置里关闭」的提示，而不是从菜单里消失。
 
 ## 使用
 
@@ -90,6 +113,7 @@ flowchart TD
 | `/folds` | 列出当前会话表面上的所有折叠项：`#序号 · 工具与命令 · 原大小 · 原文路径` |
 | `/unfold <序号>` | 把该条替身换回原文（日志 append-only，仍然可回放） |
 | `/unfold all` | 恢复当前表面上全部折叠项 |
+| `/fold-config` | 只读打印当前生效配置，并标注与默认值不同的项 |
 | `/spill-prune` | 手动清理 spill 目录，见下面的「手动清理」一节 |
 | `session_fold_recall` 工具 | 模型按 `seq` 取回整条原文，或按 `pattern` 在所有折叠原文里逐行搜索；不传参则列清单 |
 
@@ -117,13 +141,21 @@ flowchart TD
 ## 安装
 
 ```sh
-# 在 DSH 会话里用插件管理器安装本地目录
-# plugin_manager: action=install_bundle, target=/Users/kenneth/agent/deepseek/dsh-session-fold
+# 本地目录（开发用）
+plugin_manager: action=install_bundle, target=/path/to/dsh-session-fold
+
+# 已发布版本（发版后）
+plugin_manager: action=install_bundle, target=<tarball 路径或 npm 包名>
 ```
 
-安装后会往 profile 的 `dsh.profile.bundles` 追加 `dsh-session-fold`，其
-`cordis.patch.yml` 自动插入 `session-fold` 一行。改完 `index.js` 需要重启 DSH
-（Host 半身没有 HMR）。
+安装会往 profile 的 `dsh.profile.bundles` 追加 `dsh-session-fold`，其
+`cordis.patch.yml` 自动插入 `session-fold` 一行。
+
+**改完代码不用重启 DSH**：profile 的 HMR 在 recomposition 时会替换「文件在磁盘上已改动」
+的已安装/链接包，最省事的做法是对该 entry 关开一次（`plugin_manager` `set_plugin`
+`include:session-fold` 先 false 再 true）。判断新代码是否真的载入，看
+`cordis_inspect_query(host, Tool.listTools)` 里有没有 `session_fold_recall`——
+entry 的 `fiberPhase: active` 只说明旧代码还活着。
 
 ## 测试
 
@@ -131,14 +163,25 @@ flowchart TD
 cd dsh-session-fold && node --test
 ```
 
-两套测试：
+五套测试，共 52 个用例（`fold` 17、`prune` 9、`live-session` 3、`config` 11、`client-logic` 12）：
 
 1. `test/fold.test.mjs` —— 最小 fake Session 复现宿主的 surface 语义（replace 移除区间、
    新节点入尾、日志事件不带 surfaceOp），覆盖保留窗口、错误结果、富内容、幂等、
-   prune 紧邻、压缩进行中让路、手动保留策略、落盘与 token 记账。
-2. `test/live-session.test.mjs` —— 直接 import 宿主随附的 `@deepseek-ai/dsh-session`，
-   在真实 `Session.append` 校验下跑折叠，确认 replace 事件、`sourceEventSeqs` 覆盖、
-   `compaction/prune` 影子计价都被真实契约接受（找不到 DSH 安装时自动跳过）。
+   prune 紧邻、压缩进行中让路、手动保留策略、落盘与 token 记账、折叠与恢复往返。
+2. `test/live-session.test.mjs` —— import 宿主随附的 `@deepseek-ai/dsh-session`，
+   在真实 `Session.append` 校验下跑折叠与恢复，确认 replace 事件、`sourceEventSeqs` 覆盖、
+   `compaction/prune` 影子计价都被真实契约接受。模块位置**动态解析**，按顺序尝试：
+   `DSH_SESSION_MODULE` 环境变量 → 本地 `node_modules` → `~/.nvm/versions/node/*/lib`、
+   `/usr/local/lib`、`/opt/homebrew/lib`、`~/.local/lib` 下的全局 DSH 安装；
+   全都找不到才跳过（并打印跳过理由）。
+3. `test/prune.test.mjs` —— `/spill-prune` 的参数解析、根校验、目录扫描、孤儿判定、
+   按龄判定与删除护栏，全部在 `os.tmpdir` 的临时 fixture 里跑。
+4. `test/config.test.mjs` —— 配置字段元数据、volatile 引用读写、`resolveConfig` 校验规则、
+   `/fold-config` 的 `← 与默认值不同` 标注，以及「只有 pruneRoot 不进配置页」。
+5. `test/client-logic.test.mjs` —— 配置页的纯逻辑：草稿转换、范围与跨字段预算校验、
+   mutation ops 组装、命名空间解析。`client.js` 在 Node 下（无 `window`）把纯函数挂到
+   `globalThis.__sessionFoldClientInternals`，因此这些只在浏览器里才会暴露的坑（比如数字字段
+   拿字符串提交、被宿主按 schema 拒绝）可以在 `node --test` 里回归。
 
 ## 手动清理 spill
 
@@ -163,8 +206,8 @@ cd dsh-session-fold && node --test
 - 不折 user/assistant 消息；不会把「命令记录」本身合并成一行（保留工具调用结构）。
 - 折叠会让 provider 的 prompt cache 从第一个被改动的消息起失效；触发是「压力达标才批量折一次」，
   而不是每步都折，就是这个原因。
-- spill 文件的保留期限由 `dsh-spill-local` 决定；本 profile 已把它改到固定目录
-  `/Users/kenneth/.dsh/spill` 且 `cleanupPeriodDays: 0`（不清理）。即使将来被清理，
-  `/unfold` 与 recall 工具走日志，不受影响。
+- spill 文件的保留期限由 `dsh-spill-local` 决定（默认 30 天，只在 DSH 启动时扫一次）；
+  推荐把落点固定到稳定目录并按需保留，例如 `root: ~/.dsh/spill`、`cleanupPeriodDays: 7`。
+  即使被清理，`/unfold` 与 recall 工具走日志，不受影响；要立刻清可以手动跑 `/spill-prune`。
 - 单条仍巨大且不可分的结果（例如一次 200k 字符的输出）折后依旧占位：本插件按头尾预算折叠，
   能压到约 400 字符 + 元信息。
