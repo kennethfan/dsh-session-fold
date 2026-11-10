@@ -141,11 +141,11 @@ flowchart TD
 ## 安装
 
 ```sh
+# 已发布版本（v0.1.0，资产名固定不带版本号，链接长期有效）
+plugin_manager: action=install_bundle, target=https://github.com/kennethfan/dsh-session-fold/releases/latest/download/dsh-session-fold.tgz
+
 # 本地目录（开发用）
 plugin_manager: action=install_bundle, target=/path/to/dsh-session-fold
-
-# 已发布版本（发版后）
-plugin_manager: action=install_bundle, target=<tarball 路径或 npm 包名>
 ```
 
 安装会往 profile 的 `dsh.profile.bundles` 追加 `dsh-session-fold`，其
